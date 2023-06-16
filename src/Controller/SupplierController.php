@@ -23,6 +23,8 @@ class SupplierController extends AbstractController
         $picture = $post_data['picture'];
         $city = $post_data['city'];
 
+        $file = $request->files->get('picture');
+
         $entityManager = $doctrine->getManager();
 
         $supplier = new Supplier();
@@ -30,8 +32,23 @@ class SupplierController extends AbstractController
         $supplier->setEmail($email);
         $supplier->setAddress($address);
         $supplier->setPhone($phone);
-        $supplier->setPicture($picture);
         $supplier->setCity($city);
+
+
+        if ($file) {
+            try {
+                // Generate a unique filename to avoid conflicts
+                $filename = uniqid().'.'.$file->getClientOriginalExtension();
+        
+                // Move the uploaded file to the desired location
+                $file->move('public/images/', $filename);
+        
+                // Set the file path or any other relevant information in the entity
+                $supplier->setPicture('images/'.$filename);
+            } catch (\Exception $e) {
+                // Handle the exception
+                return $this->json(['code' => '500', 'message' => 'Failed to upload the file']);
+            }}
 
         $entityManager->persist($supplier);
         $entityManager->flush();
