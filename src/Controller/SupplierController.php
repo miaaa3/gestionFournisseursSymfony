@@ -4,58 +4,61 @@ namespace App\Controller;
 
 use App\Entity\Supplier;
 use Doctrine\Persistence\ManagerRegistry;
+use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Annotation\Route;
+use Symfony\Component\String\Slugger\SluggerInterface;
+use Symfony\Component\HttpFoundation\File\UploadedFile;
 
 class SupplierController extends AbstractController
 {
     #[Route('/insert_supplier', name: 'app_supplier')]
-    public function insertSupplier(ManagerRegistry $doctrine, Request $request): Response
+    public function insertSupplier(Request $request, SluggerInterface $slugger, EntityManagerInterface $entityManager): JsonResponse
     {
-        $post_data = json_decode($request->getContent(), true);
-        
-        $name = $post_data['name'];
-        $email = $post_data['email'];
-        $address = $post_data['address'];
-        $phone = $post_data['phone'];
-        $picture = $post_data['picture'];
-        $city = $post_data['city'];
+        $name = $request->request->get('name');
+        $email = $request->request->get('email');
+        $address = $request->request->get('address');
+        $phone = $request->request->get('phone');
+        $city = $request->request->get('city');
+        $pictureFile = $request->files->get('picture');
 
-        $file = $request->files->get('picture');
 
-        $entityManager = $doctrine->getManager();
+        // Handle picture upload
+        $pictureFileName = null;
+        if ($pictureFile instanceof UploadedFile) {
+            $originalFilename = pathinfo($pictureFile->getClientOriginalName(), PATHINFO_FILENAME);
+            $safeFilename = $slugger->slug($originalFilename);
+            $newFilename = $safeFilename.'-'.uniqid().'.'.$pictureFile->guessExtension();
 
+            try { 
+                $pictureFile->move(
+                    $this->getParameter('supplier_pictures_directory'),
+                    $newFilename
+                );
+                $pictureFileName = $newFilename;
+            } catch (\Exception $e) {
+                return new JsonResponse(['message' => 'Failed to upload the picture'], Response::HTTP_INTERNAL_SERVER_ERROR);
+            }
+        }
+
+        // Create and persist the supplier entity
         $supplier = new Supplier();
         $supplier->setName($name);
         $supplier->setEmail($email);
         $supplier->setAddress($address);
         $supplier->setPhone($phone);
         $supplier->setCity($city);
-
-
-        if ($file) {
-            try {
-                // Generate a unique filename to avoid conflicts
-                $filename = uniqid().'.'.$file->getClientOriginalExtension();
-        
-                // Move the uploaded file to the desired location
-                $file->move('public/images/', $filename);
-        
-                // Set the file path or any other relevant information in the entity
-                $supplier->setPicture('images/'.$filename);
-            } catch (\Exception $e) {
-                // Handle the exception
-                return $this->json(['code' => '500', 'message' => 'Failed to upload the file']);
-            }}
+        $supplier->setPicture($pictureFileName);
 
         $entityManager->persist($supplier);
         $entityManager->flush();
 
-        return $this->json(['code' => '200', 'message'=> 'Supplier inserted successfully']);
+        return new JsonResponse(['message' => 'Supplier created successfully'], Response::HTTP_CREATED);
     }
-
+   
     #[Route('/getOneSupplier', name: 'getOneSupplier')]
     public function getOneSupplier(ManagerRegistry $doctrine, Request $request): Response
     {
